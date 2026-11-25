@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CSV Price Explorer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    color-scheme: light;
+    --page: #f9f9f9;
+    --surface: #ffffff;
+    --ink: #191919;
+    --ink-2: #666666;
+    --grid: #e7e7e7;
+    --baseline: #c2c2c2;
+    --border: rgba(11, 11, 11, 0.10);
+    --series-1: #257de0;
+    --series-1-wash: rgba(37, 125, 224, 0.10);
+    --critical: #dc3c3d;
+    --critical-bg: #fdf0f0;
+    --warning: #fbb315;
+    --warning-bg: #fff7e0;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
+    --focus: #257de0;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --page: #0b0b0b;
+      --surface: #191919;
+      --ink: #efefef;
+      --ink-2: #9c9c9c;
+      --grid: #303030;
+      --baseline: #474747;
+      --border: rgba(255, 255, 255, 0.10);
+      --series-1: #338ced;
+      --series-1-wash: rgba(51, 140, 237, 0.16);
+      --critical: #eb6263;
+      --critical-bg: #2a1516;
+      --warning: #fbb315;
+      --warning-bg: #2b2110;
+      --shadow: none;
+      --focus: #338ced;
+    }
+  }
+
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { max-width: 980px; margin: 0 auto; padding: 44px 20px 64px; }
+
+  header h1 {
+    margin: 0 0 6px;
+    font-size: clamp(1.5rem, 3vw, 1.9rem);
+    letter-spacing: -0.02em;
+  }
+  header p { margin: 0 0 26px; color: var(--ink-2); max-width: 68ch; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+  }
+
+  .dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 30px 20px;
+    border: 2px dashed var(--baseline);
+    border-radius: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: var(--series-1);
+    background: var(--series-1-wash);
+  }
+  .dropzone:focus-within {
+    outline: 2px solid var(--focus);
+    outline-offset: 3px;
+  }
+  .dropzone-title { font-weight: 600; }
+  .dropzone-hint { color: var(--ink-2); font-size: 0.875rem; }
+
+  .file-name {
+    margin: 12px 2px 0;
+    color: var(--ink-2);
+    font-size: 0.85rem;
+    word-break: break-all;
+  }
+
+  .alert, .notice {
+    margin: 14px 0 0;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--critical);
+    background: var(--critical-bg);
+    color: var(--ink);
+    font-size: 0.9rem;
+  }
+  .notice { border-left-color: var(--warning); background: var(--warning-bg); }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    gap: 12px;
+    margin: 18px 0;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .stat-label { margin: 0 0 4px; color: var(--ink-2); font-size: 0.78rem; }
+  .stat-value {
+    margin: 0;
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .stat-value.small { font-size: 0.98rem; font-weight: 500; line-height: 1.35; }
+  .nowrap { white-space: nowrap; }
+
+  .chart-card { margin-bottom: 14px; }
+  .chart-head h2 { margin: 0; font-size: 1rem; }
+  .chart-sub { margin: 2px 0 14px; color: var(--ink-2); font-size: 0.85rem; }
+  .chart-wrap { position: relative; }
+  .chart-wrap svg { display: block; width: 100%; height: auto; }
+  svg:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; border-radius: 6px; }
+
+  .tick-text { fill: var(--ink-2); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .gridline { stroke: var(--grid); stroke-width: 1; }
+  .axis-line { stroke: var(--baseline); stroke-width: 1; }
+  .series-line {
+    fill: none;
+    stroke: var(--series-1);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .series-end { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
+  .hover-dot { fill: var(--series-1); stroke: var(--surface); stroke-width: 2; }
+  .crosshair { stroke: var(--ink-2); stroke-width: 1; opacity: 0.55; }
+  .end-label { fill: var(--ink); font-size: 12px; font-weight: 600; }
+
+  .tooltip {
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    min-width: 118px;
+    padding: 8px 11px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    box-shadow: var(--shadow);
+  }
+  .tooltip-value { font-size: 15px; font-weight: 600; }
+  .tooltip-label { margin-top: 1px; font-size: 12px; color: var(--ink-2); }
+
+  .table-card summary { cursor: pointer; font-weight: 600; }
+  .table-card summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  .table-wrap { max-height: 320px; overflow: auto; margin-top: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--grid); }
+  th {
+    position: sticky;
+    top: 0;
+    background: var(--surface);
+    color: var(--ink-2);
+    font-weight: 600;
+  }
+  td { font-variant-numeric: tabular-nums; }
+  th:last-child, td:last-child { text-align: right; }
+
+  .hint { margin: 22px 2px 0; color: var(--ink-2); font-size: 0.8rem; }
+
+  .visually-hidden {
+    position: absolute !important;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <header>
+    <h1>CSV Price Explorer</h1>
+    <p>
+      Upload a CSV with a <strong>Date</strong> column and a <strong>Close</strong> column.
+      An AAPL OHLCV file works as-is. Everything runs locally in your browser &mdash;
+      no upload, no backend, no API keys.
+    </p>
+  </header>
+
+  <section class="card" aria-label="Upload a CSV file">
+    <label class="dropzone" id="dropzone" for="file-input">
+      <span class="dropzone-title">Choose a CSV file or drag it here</span>
+      <span class="dropzone-hint">Expected columns: Date and Close (Adj Close also works)</span>
+      <input class="visually-hidden" id="file-input" type="file" accept=".csv,text/csv,text/plain" />
+    </label>
+    <p class="file-name" id="file-name" hidden></p>
+    <div class="alert" id="error" role="alert" hidden></div>
+    <div class="notice" id="warning" role="status" hidden></div>
+  </section>
+
+  <section id="results" hidden aria-label="Results">
+    <div class="stats" aria-label="Summary statistics">
+      <div class="stat"><p class="stat-label">Rows</p><p class="stat-value" id="stat-rows">&mdash;</p></div>
+      <div class="stat"><p class="stat-label">Date range</p><p class="stat-value small" id="stat-range">&mdash;</p></div>
+      <div class="stat"><p class="stat-label">Mean close</p><p class="stat-value" id="stat-mean">&mdash;</p></div>
+      <div class="stat"><p class="stat-label">Min close</p><p class="stat-value" id="stat-min">&mdash;</p></div>
+      <div class="stat"><p class="stat-label">Max close</p><p class="stat-value" id="stat-max">&mdash;</p></div>
+    </div>
+
+    <section class="card chart-card" aria-labelledby="chart-title">
+      <div class="chart-head">
+        <h2 id="chart-title">Close price over time</h2>
+        <p class="chart-sub" id="chart-sub"></p>
+      </div>
+      <div class="chart-wrap">
+        <svg id="chart" viewBox="0 0 860 380" role="img" tabindex="0" aria-label="Close price line chart"></svg>
+        <div class="tooltip" id="tooltip" hidden>
+          <div class="tooltip-value" id="tooltip-value"></div>
+          <div class="tooltip-label" id="tooltip-label"></div>
+        </div>
+      </div>
+    </section>
+
+    <details class="card table-card">
+      <summary id="table-summary">View data table</summary>
+      <div class="table-wrap">
+        <table id="data-table">
+          <thead><tr><th scope="col">Date</th><th scope="col">Close (USD)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </details>
+  </section>
+
+  <p class="hint">
+    Local-only: the CSV is parsed in this page. Keyboard users: focus the chart and use
+    &larr; / &rarr; to explore values.
+  </p>
+
+  <div class="visually-hidden" id="sr-status" role="status" aria-live="polite"></div>
+  <noscript><p class="notice">This tool needs JavaScript enabled in your browser.</p></noscript>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- DOM references ----------
+  const dropzone = document.getElementById("dropzone");
+  const fileInput = document.getElementById("file-input");
+  const fileNameEl = document.getElementById("file-name");
+  const errorEl = document.getElementById("error");
+  const warningEl = document.getElementById("warning");
+  const resultsEl = document.getElementById("results");
+
+  const statRows = document.getElementById("stat-rows");
+  const statRange = document.getElementById("stat-range");
+  const statMean = document.getElementById("stat-mean");
+  const statMin = document.getElementById("stat-min");
+  const statMax = document.getElementById("stat-max");
+
+  const chartEl = document.getElementById("chart");
+  const chartWrap = document.querySelector(".chart-wrap");
+  const chartSub = document.getElementById("chart-sub");
+  const tooltipEl = document.getElementById("tooltip");
+  const tooltipValue = document.getElementById("tooltip-value");
+  const tooltipLabel = document.getElementById("tooltip-label");
+
+  const tableEl = document.getElementById("data-table");
+  const tableSummary = document.getElementById("table-summary");
+  const srStatus = document.getElementById("sr-status");
+
+  // ---------- formatters ----------
+  const fmtLong = new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC", year: "numeric", month: "short", day: "numeric"
+  });
+  const fmtMonthYear = new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC", month: "short", year: "numeric"
+  });
+  const fmtMonthDay = new Intl.DateTimeFormat("en-US", {
+    timeZone: "UTC", month: "short", day: "numeric"
+  });
+  const usd2 = new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD",
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+  });
+
+  // ---------- CSV parsing ----------
+  // Minimal RFC 4180-style parser: handles quoted fields, escaped quotes ("")
+  // and CRLF line endings.
+  function parseCsvRows(text) {
+    const rows = [];
+    let row = [];
+    let field = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; }
+          else { inQuotes = false; }
+        } else {
+          field += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ",") {
+        row.push(field);
+        field = "";
+      } else if (ch === "\n") {
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = "";
+      } else if (ch !== "\r") {
+        field += ch;
+      }
+    }
+    if (field !== "" || row.length > 0) {
+      row.push(field);
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function utcDate(year, month, day) {
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const t = Date.UTC(year, month - 1, day);
+    const d = new Date(t);
+    if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+      return null;
+    }
+    return t;
+  }
+
+  function parseDateCell(value) {
+    if (!value) return null;
+    let m = value.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (m) return utcDate(+m[1], +m[2], +m[3]);
+    m = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (m) return utcDate(+m[3], +m[1], +m[2]);
+    const parsed = Date.parse(value);
+    if (Number.isNaN(parsed)) return null;
+    const d = new Date(parsed);
+    return utcDate(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  }
+
+  function parseCloseCell(value) {
+    if (!value) return null;
+    const cleaned = value.replace(/[$,\s]/g, "");
+    if (cleaned === "") return null;
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function parseCsvData(text) {
+    const clean = text.replace(/^﻿/, "");
+    if (/^[\s]*[\[{]/.test(clean)) {
+      throw new Error("This looks like JSON, not CSV. Please upload a CSV file with Date and Close columns.");
+    }
+
+    const rows = parseCsvRows(clean).filter(function (r) {
+      return r.some(function (c) { return c.trim() !== ""; });
+    });
+    if (rows.length === 0) {
+      throw new Error("The file is empty or contains no CSV rows. Please choose a file with a header row and daily price data.");
+    }
+
+    const header = rows[0].map(function (c) { return c.trim(); });
+    const normalized = header.map(function (h) { return h.toLowerCase(); });
+    const dateIdx = normalized.indexOf("date");
+    let closeIdx = normalized.indexOf("close");
+    let usedAdjClose = false;
+    if (closeIdx === -1) {
+      const adjIdx = normalized.findIndex(function (h) {
+        return h === "adj close" || h === "adjclose";
+      });
+      if (adjIdx !== -1) { closeIdx = adjIdx; usedAdjClose = true; }
+    }
+
+    const missing = [];
+    if (dateIdx === -1) missing.push('"Date"');
+    if (closeIdx === -1) missing.push('"Close"');
+    if (missing.length > 0) {
+      const found = header.filter(function (h) { return h !== ""; }).join(", ") || "(none)";
+      throw new Error(
+        "Missing required column" + (missing.length > 1 ? "s" : "") + ": " +
+        missing.join(" and ") + ". Found columns: " + found + "."
+      );
+    }
+
+    const points = [];
+    let skipped = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const cells = rows[i];
+      const dateCell = (cells[dateIdx] || "").trim();
+      const closeCell = (cells[closeIdx] || "").trim();
+      if (!dateCell && !closeCell) continue;
+
+      const t = parseDateCell(dateCell);
+      const close = parseCloseCell(closeCell);
+      if (t === null || close === null) { skipped++; continue; }
+      points.push({ t: t, close: close });
+    }
+
+    if (points.length === 0) {
+      throw new Error(
+        "No valid data rows found. Check that Date values are dates and Close values are numbers."
+      );
+    }
+
+    points.sort(function (a, b) { return a.t - b.t; });
+    return { points: points, skipped: skipped, usedAdjClose: usedAdjClose };
+  }
+
+  // ---------- file handling ----------
+  function showError(message) {
+    errorEl.textContent = message;
+    errorEl.hidden = false;
+    warningEl.hidden = true;
+    resultsEl.hidden = true;
+  }
+
+  function readFile(file) {
+    fileNameEl.textContent = "Selected file: " + file.name;
+    fileNameEl.hidden = false;
+    errorEl.hidden = true;
+    warningEl.hidden = true;
+
+    if (file.size === 0) {
+      showError("This file is empty. Please choose a CSV file with Date and Close columns.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = function () {
+      showError("The file could not be read. Please try another CSV file.");
+    };
+    reader.onload = function () {
+      try {
+        render(parseCsvData(String(reader.result || "")));
+      } catch (err) {
+        showError(err && err.message ? err.message : "The file could not be parsed as CSV.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  // ---------- summary + table ----------
+  function render(data) {
+    const points = data.points;
+    const first = points[0].t;
+    const last = points[points.length - 1].t;
+
+    let sum = 0;
+    let min = points[0].close;
+    let max = points[0].close;
+    for (let i = 0; i < points.length; i++) {
+      const c = points[i].close;
+      sum += c;
+      if (c < min) min = c;
+      if (c > max) max = c;
+    }
+
+    statRows.textContent = points.length.toLocaleString("en-US");
+    const rangeFrom = document.createElement("span");
+    rangeFrom.className = "nowrap";
+    rangeFrom.textContent = fmtLong.format(new Date(first));
+    const rangeTo = document.createElement("span");
+    rangeTo.className = "nowrap";
+    rangeTo.textContent = fmtLong.format(new Date(last));
+    statRange.replaceChildren(rangeFrom, document.createTextNode(" – "), rangeTo);
+    statMean.textContent = usd2.format(sum / points.length);
+    statMin.textContent = usd2.format(min);
+    statMax.textContent = usd2.format(max);
+
+    chartSub.textContent =
+      "Close (USD) · " + points.length.toLocaleString("en-US") + " points · " +
+      fmtLong.format(new Date(first)) + " – " + fmtLong.format(new Date(last));
+    tableSummary.textContent = "View data table (" + points.length.toLocaleString("en-US") + " rows)";
+
+    const warnings = [];
+    if (data.usedAdjClose) {
+      warnings.push('No "Close" column was found, so the chart uses "Adj Close" values.');
+    }
+    if (data.skipped > 0) {
+      warnings.push(data.skipped + " row(s) were skipped because their Date or Close value could not be parsed.");
+    }
+    warningEl.hidden = warnings.length === 0;
+    if (warnings.length > 0) warningEl.textContent = warnings.join(" ");
+
+    resultsEl.hidden = false;
+
+    drawChart(points);
+    renderTable(points);
+
+    srStatus.textContent =
+      "Loaded " + points.length + " rows from " +
+      fmtLong.format(new Date(first)) + " to " + fmtLong.format(new Date(last)) + ".";
+  }
+
+  function renderTable(points) {
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    ["Date", "Close (USD)"].forEach(function (name) {
+      const th = document.createElement("th");
+      th.scope = "col";
+      th.textContent = name;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+
+    const tbody = document.createElement("tbody");
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < points.length; i++) {
+      const tr = document.createElement("tr");
+      const tdDate = document.createElement("td");
+      tdDate.textContent = new Date(points[i].t).toISOString().slice(0, 10);
+      const tdClose = document.createElement("td");
+      tdClose.textContent = points[i].close.toFixed(2);
+      tr.appendChild(tdDate);
+      tr.appendChild(tdClose);
+      frag.appendChild(tr);
+    }
+    tbody.appendChild(frag);
+    tableEl.replaceChildren(thead, tbody);
+  }
+
+  // ---------- chart ----------
+  const SVG_W = 860;
+  const SVG_H = 380;
+  const M = { top: 20, right: 28, bottom: 40, left: 76 };
+
+  let chartState = null;
+  let activeIndex = 0;
+
+  function niceDomain(min, max, targetTicks) {
+    if (min === max) {
+      const pad = Math.abs(min) * 0.05 || 1;
+      min -= pad;
+      max += pad;
+    }
+    const rawStep = (max - min) / targetTicks;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)));
+    const norm = rawStep / magnitude;
+    let step;
+    if (norm <= 1) step = 1;
+    else if (norm <= 2) step = 2;
+    else if (norm <= 2.5) step = 2.5;
+    else if (norm <= 5) step = 5;
+    else step = 10;
+    step *= magnitude;
+    return {
+      lo: Math.floor(min / step) * step,
+      hi: Math.ceil(max / step) * step,
+      step: step
+    };
+  }
+
+  function addSvg(tag, attrs) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const key in attrs) {
+      if (Object.prototype.hasOwnProperty.call(attrs, key)) {
+        node.setAttribute(key, attrs[key]);
+      }
+    }
+    chartEl.appendChild(node);
+    return node;
+  }
+
+  function drawChart(points) {
+    hideTooltip();
+    while (chartEl.firstChild) chartEl.removeChild(chartEl.firstChild);
+
+    const plotW = SVG_W - M.left - M.right;
+    const plotH = SVG_H - M.top - M.bottom;
+
+    let min = points[0].close;
+    let max = points[0].close;
+    for (let i = 1; i < points.length; i++) {
+      if (points[i].close < min) min = points[i].close;
+      if (points[i].close > max) max = points[i].close;
+    }
+
+    const domain = niceDomain(min, max, 5);
+    let t0 = points[0].t;
+    let t1 = points[points.length - 1].t;
+    if (t0 === t1) { t0 -= 86400000; t1 += 86400000; }
+
+    const x = function (t) {
+      return M.left + ((t - t0) / (t1 - t0)) * plotW;
+    };
+    const y = function (v) {
+      return M.top + (1 - (v - domain.lo) / (domain.hi - domain.lo)) * plotH;
+    };
+
+    const axisUsd = new Intl.NumberFormat("en-US", {
+      style: "currency", currency: "USD",
+      minimumFractionDigits: domain.step < 1 ? 2 : 0,
+      maximumFractionDigits: domain.step < 1 ? 2 : 0
+    });
+
+    // Horizontal gridlines and y-axis labels (solid hairlines, recessive).
+    const yTicks = Math.round((domain.hi - domain.lo) / domain.step);
+    for (let i = 0; i <= yTicks; i++) {
+      const value = domain.lo + i * domain.step;
+      const yy = y(value);
+      addSvg("line", {
+        x1: M.left, x2: M.left + plotW, y1: yy, y2: yy, "class": "gridline"
+      });
+      const label = addSvg("text", {
+        x: M.left - 10, y: yy, dy: "0.35em",
+        "text-anchor": "end", "class": "tick-text"
+      });
+      label.textContent = axisUsd.format(value);
+    }
+
+    addSvg("line", {
+      x1: M.left, x2: M.left + plotW,
+      y1: M.top + plotH, y2: M.top + plotH,
+      "class": "axis-line"
+    });
+
+    // X-axis ticks: 5 evenly spaced dates across the range.
+    const spanDays = (t1 - t0) / 86400000;
+    const xFmt = spanDays > 400 ? fmtMonthYear : fmtMonthDay;
+    const tickCount = 5;
+    for (let i = 0; i < tickCount; i++) {
+      const t = t0 + ((t1 - t0) * i) / (tickCount - 1);
+      const label = addSvg("text", {
+        x: x(t), y: M.top + plotH + 24,
+        "text-anchor": "middle", "class": "tick-text"
+      });
+      label.textContent = xFmt.format(new Date(t));
+    }
+
+    // The series: one 2px line, round joins/caps.
+    let d = "";
+    for (let i = 0; i < points.length; i++) {
+      d += (i === 0 ? "M" : "L") + x(points[i].t).toFixed(2) + "," + y(points[i].close).toFixed(2);
+    }
+    addSvg("path", { d: d, "class": "series-line" });
+
+    // End marker + selective direct label (endpoint only).
+    const last = points[points.length - 1];
+    const lx = x(last.t);
+    const ly = y(last.close);
+    addSvg("circle", { cx: lx, cy: ly, r: 4, "class": "series-end" });
+
+    const anchorEnd = lx > M.left + 140;
+    const endLabel = addSvg("text", {
+      x: anchorEnd ? lx - 8 : lx + 8,
+      y: Math.max(ly - 10, M.top + 12),
+      "text-anchor": anchorEnd ? "end" : "start",
+      "class": "end-label"
+    });
+    endLabel.textContent = usd2.format(last.close);
+
+    // Hover layer: crosshair + dot, hidden until the pointer or keyboard moves in.
+    const crosshair = addSvg("line", {
+      x1: 0, x2: 0, y1: M.top, y2: M.top + plotH,
+      "class": "crosshair", visibility: "hidden"
+    });
+    const hoverDot = addSvg("circle", {
+      cx: 0, cy: 0, r: 4, "class": "hover-dot", visibility: "hidden"
+    });
+
+    chartState = {
+      points: points,
+      x: x,
+      y: y,
+      t0: t0,
+      t1: t1,
+      plotW: plotW,
+      crosshair: crosshair,
+      hoverDot: hoverDot
+    };
+    activeIndex = points.length - 1;
+
+    chartEl.setAttribute(
+      "aria-label",
+      "Line chart of Close price from " + fmtLong.format(new Date(points[0].t)) +
+      " to " + fmtLong.format(new Date(last.t)) + ", " + points.length +
+      " points. Use left and right arrow keys to explore values."
+    );
+  }
+
+  function nearestIndex(clientX) {
+    const rect = chartEl.getBoundingClientRect();
+    const svgX = ((clientX - rect.left) / rect.width) * SVG_W;
+    const clamped = Math.max(M.left, Math.min(M.left + chartState.plotW, svgX));
+    const target = chartState.t0 +
+      ((clamped - M.left) / chartState.plotW) * (chartState.t1 - chartState.t0);
+
+    const pts = chartState.points;
+    let lo = 0;
+    let hi = pts.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (pts[mid].t < target) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo > 0 && Math.abs(pts[lo - 1].t - target) <= Math.abs(pts[lo].t - target)) {
+      lo -= 1;
+    }
+    return lo;
+  }
+
+  function showPoint(index, announce) {
+    if (!chartState) return;
+    const pts = chartState.points;
+    const i = Math.max(0, Math.min(pts.length - 1, index));
+    activeIndex = i;
+    const p = pts[i];
+    const cx = chartState.x(p.t);
+    const cy = chartState.y(p.close);
+
+    chartState.crosshair.setAttribute("x1", cx);
+    chartState.crosshair.setAttribute("x2", cx);
+    chartState.crosshair.setAttribute("visibility", "visible");
+    chartState.hoverDot.setAttribute("cx", cx);
+    chartState.hoverDot.setAttribute("cy", cy);
+    chartState.hoverDot.setAttribute("visibility", "visible");
+
+    tooltipValue.textContent = usd2.format(p.close);
+    tooltipLabel.textContent = fmtLong.format(new Date(p.t));
+
+    const rect = chartEl.getBoundingClientRect();
+    const px = (cx / SVG_W) * rect.width;
+    const py = (cy / SVG_H) * rect.height;
+    const wrapW = chartWrap.clientWidth;
+
+    tooltipEl.hidden = false;
+    tooltipEl.style.left = Math.max(74, Math.min(wrapW - 74, px)) + "px";
+    tooltipEl.style.top = py + "px";
+    const tipH = tooltipEl.offsetHeight;
+    tooltipEl.style.transform = py > tipH + 20
+      ? "translate(-50%, calc(-100% - 12px))"
+      : "translate(-50%, 14px)";
+
+    if (announce) {
+      srStatus.textContent = fmtLong.format(new Date(p.t)) + ", Close " + usd2.format(p.close);
+    }
+  }
+
+  function hideTooltip() {
+    tooltipEl.hidden = true;
+    if (chartState) {
+      chartState.crosshair.setAttribute("visibility", "hidden");
+      chartState.hoverDot.setAttribute("visibility", "hidden");
+    }
+  }
+
+  chartEl.addEventListener("pointermove", function (event) {
+    if (!chartState) return;
+    showPoint(nearestIndex(event.clientX), false);
+  });
+  chartEl.addEventListener("pointerleave", hideTooltip);
+  chartEl.addEventListener("focus", function () {
+    if (chartState) showPoint(activeIndex, true);
+  });
+  chartEl.addEventListener("blur", hideTooltip);
+  chartEl.addEventListener("keydown", function (event) {
+    if (!chartState) return;
+    const last = chartState.points.length - 1;
+    let next = null;
+    if (event.key === "ArrowLeft") next = Math.max(0, activeIndex - 1);
+    else if (event.key === "ArrowRight") next = Math.min(last, activeIndex + 1);
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = last;
+    else if (event.key === "Escape") { hideTooltip(); return; }
+    if (next === null) return;
+    event.preventDefault();
+    showPoint(next, true);
+  });
+
+  // ---------- wiring ----------
+  fileInput.addEventListener("change", function () {
+    const file = fileInput.files && fileInput.files[0];
+    if (file) readFile(file);
+    fileInput.value = "";
+  });
+
+  ["dragenter", "dragover"].forEach(function (type) {
+    dropzone.addEventListener(type, function (event) {
+      event.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+  });
+  ["dragleave", "drop"].forEach(function (type) {
+    dropzone.addEventListener(type, function (event) {
+      event.preventDefault();
+      dropzone.classList.remove("dragover");
+    });
+  });
+  dropzone.addEventListener("drop", function (event) {
+    const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) readFile(file);
+  });
+
+  // Stop the browser from navigating away when a file is dropped outside the zone.
+  window.addEventListener("dragover", function (event) { event.preventDefault(); });
+  window.addEventListener("drop", function (event) { event.preventDefault(); });
+})();
+</script>
+</body>
+</html>

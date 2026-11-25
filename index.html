@@ -832,5 +832,64 @@
   window.addEventListener("drop", function (event) { event.preventDefault(); });
 })();
 </script>
+
+<!-- Anonymous visit logging: sends only a timestamp, a random session ID, and the page title. -->
+<script>
+(function () {
+  "use strict";
+
+  // Replace this placeholder with your deployed Google Apps Script web app URL.
+  // While it still contains "REPLACE_WITH", nothing is sent.
+  var VISIT_LOG_URL = "https://script.google.com/macros/s/REPLACE_WITH_YOUR_DEPLOYMENT_ID/exec";
+
+  function randomSessionId() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID();
+      }
+    } catch (e) { /* fall through to Math.random */ }
+    return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
+
+  function getSessionId() {
+    try {
+      var existing = window.sessionStorage.getItem("visitSessionId");
+      if (existing) return existing;
+      var id = randomSessionId();
+      window.sessionStorage.setItem("visitSessionId", id);
+      return id;
+    } catch (e) {
+      return randomSessionId();
+    }
+  }
+
+  function logVisit() {
+    try {
+      if (!VISIT_LOG_URL || VISIT_LOG_URL.indexOf("REPLACE_WITH") !== -1) return;
+      if (typeof fetch !== "function") return;
+
+      var payload = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        sessionId: getSessionId(),
+        pageTitle: document.title
+      });
+
+      // text/plain keeps this a CORS "simple request" (no preflight) for
+      // Apps Script; the response is intentionally unread. Any failure is ignored.
+      fetch(VISIT_LOG_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "text/plain;charset=UTF-8" },
+        body: payload,
+        keepalive: true
+      }).catch(function () { /* fail silently */ });
+    } catch (e) {
+      /* fail silently */
+    }
+  }
+
+  logVisit();
+})();
+</script>
 </body>
 </html>
